@@ -2555,7 +2555,7 @@ pub type LPXLOPER12 = *mut xloper12;
 // except that the parameters claim at be passed left-to-right rather than right-to-left.
 // This appears not to be the case, so we therefore leave the parameter order alone.
 
-extern "cdecl" {
+unsafe extern "cdecl" {
     #[link_name = "\u{1}_Excel4"]
     pub fn Excel4(
         xlfn: ::std::os::raw::c_int,
@@ -2564,7 +2564,7 @@ extern "cdecl" {
         ...
     ) -> ::std::os::raw::c_int;
 }
-extern "stdcall" {
+unsafe extern "stdcall" {
     #[link_name = "\u{1}EXCEL4V"]
     pub fn Excel4v(
         xlfn: ::std::os::raw::c_int,
@@ -2573,15 +2573,15 @@ extern "stdcall" {
         opers: *mut LPXLOPER,
     ) -> ::std::os::raw::c_int;
 }
-extern "stdcall" {
+unsafe extern "stdcall" {
     #[link_name = "\u{1}XLCALLVER"]
     pub fn XLCallVer() -> ::std::os::raw::c_int;
 }
-extern "stdcall" {
+unsafe extern "stdcall" {
     #[link_name = "\u{1}LPENHELPER"]
     pub fn LPenHelper(wCode: ::std::os::raw::c_int, lpv: *mut VOID) -> ::std::os::raw::c_long;
 }
-extern "cdecl" {
+unsafe extern "cdecl" {
     #[link_name = "\u{1}_Excel12"]
     pub fn Excel12(
         xlfn: ::std::os::raw::c_int,
@@ -2590,7 +2590,7 @@ extern "cdecl" {
         ...
     ) -> ::std::os::raw::c_int;
 }
-extern "stdcall" {
+unsafe extern "stdcall" {
     #[link_name = "\u{1}EXCEL12V"]
     pub fn Excel12v(
         xlfn: ::std::os::raw::c_int,

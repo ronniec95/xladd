@@ -339,9 +339,31 @@ impl From<&xloper12> for f64 {
     }
 }
 
+impl From<&xloper12> for i32 {
+    fn from(v: &xloper12) -> i32 {
+        match v.xltype & xltypeMask {
+            xltypeNum => unsafe { v.val.num as i32 },
+            xltypeInt => unsafe { v.val.w as i32 },
+            xltypeStr => 0,
+            xltypeBool => (unsafe { v.val.xbool == 1 }) as i32 as i32,
+            xltypeMulti => unsafe {
+                let p = v.val.array.lparray;
+                i32::from(&*p.offset(0))
+            },
+            _ => 0,
+        }
+    }
+}
+
 impl From<&Variant> for f64 {
     fn from(v: &Variant) -> f64 {
         f64::from(&v.0)
+    }
+}
+
+impl From<&Variant> for i32 {
+    fn from(v: &Variant) -> i32 {
+        i32::from(&v.0)
     }
 }
 
@@ -519,6 +541,27 @@ impl From<&str> for Variant {
 /// string that is not valid 16bit Unicode, an xlerrValue error is stored instead.
 impl From<String> for Variant {
     fn from(s: String) -> Variant {
+        let mut wstr: Vec<u16> = s.encode_utf16().collect();
+        if wstr.len() > 65534 {
+            return Variant::from_err(xlerrValue);
+        }
+        // Pascal-style string with length at the start. Forget the string so we do not delete it.
+        // We are now relying on the drop method of Variant to clean it up for us. Note that the
+        // shrink_to_fit is essential, so the capacity is the same as the length. We have no way
+        // of storing the capacity otherwise.
+        wstr.insert(0, wstr.len() as u16);
+        wstr.shrink_to_fit();
+        let p = wstr.as_mut_ptr();
+        mem::forget(wstr);
+        Variant(XLOPER12 {
+            xltype: xltypeStr | xlbitDLLFree,
+            val: xloper12__bindgen_ty_1 { str: p },
+        })
+    }
+}
+
+impl From<&String> for Variant {
+    fn from(s: &String) -> Variant {
         let mut wstr: Vec<u16> = s.encode_utf16().collect();
         if wstr.len() > 65534 {
             return Variant::from_err(xlerrValue);
@@ -992,17 +1035,43 @@ impl From<Array2<String>> for Variant {
     }
 }
 
+impl From<(Vec<Variant>, usize)> for Variant {
+    fn from(mut arr: (Vec<Variant>, usize)) -> Variant {
+        // Return as a Variant
+        let rows = arr.0.len() / arr.1;
+        let columns = arr.1;
+        if rows == 0 || columns == 0 {
+            Variant::from_err(xlerrNull)
+        } else if rows == 1 && columns == 1 {
+            arr.0[0].clone()
+        } else {
+            let lparray = arr.0.as_mut_ptr() as LPXLOPER12;
+            mem::forget(arr.0);
+            Variant(XLOPER12 {
+                xltype: xltypeMulti | xlbitDLLFree,
+                val: xloper12__bindgen_ty_1 {
+                    array: xloper12__bindgen_ty_1__bindgen_ty_3 {
+                        lparray,
+                        rows: std::cmp::min(1_048_575, rows as i32),
+                        columns: std::cmp::min(16383, columns as i32),
+                    },
+                },
+            })
+        }
+    }
+}
+
 #[macro_export]
 macro_rules! max_col {
-    ($x: expr) => ($x);
-    ($x: expr, $($z: expr),+) => (::std::cmp::max($x, max_col!($($z),*)));
+    ($x: expr_2021) => ($x);
+    ($x: expr_2021, $($z: expr_2021),+) => (::std::cmp::max($x, xladd::max_col!($($z),*)));
 }
 
 #[cfg(feature = "use_ndarray")]
 #[macro_export]
 macro_rules! make_row_table {
-    ($row:expr,$name:literal,$val:expr $(,$rest_name:literal,$rest_val:expr)*) => {{
-        let max_col = max_col!($val.len() $(,$rest_val.len())*);
+    ($row:expr_2021,$name:literal,$val:expr_2021 $(,$rest_name:literal,$rest_val:expr_2021)*) => {{
+        let max_col = xladd::max_col!($val.len() $(,$rest_val.len())*);
         let mut res = Array2::default([$row,max_col+1]);
         res.fill(Variant::from(""));
         res[[0,0]] = Variant::from($name);
@@ -1020,8 +1089,8 @@ macro_rules! make_row_table {
 #[cfg(feature = "use_ndarray")]
 #[macro_export]
 macro_rules! make_col_table {
-    ($col:expr,$name:literal,$val:expr $(,$rest_name:literal,$rest_val:expr)*) => {{
-        let max_row = max_col!($val.len() $(,$rest_val.len())*);
+    ($col:expr_2021,$name:literal,$val:expr_2021 $(,$rest_name:literal,$rest_val:expr_2021)*) => {{
+        let max_row = xladd::max_col!($val.len() $(,$rest_val.len())*);
         let mut res = Array2::default([max_row+1,$col]);
         res.fill(Variant::from(""));
         res[[0,0]] = Variant::from($name);
@@ -1040,8 +1109,14 @@ macro_rules! make_col_table {
 macro_rules! check_arr {
     ($name:ident) => {
         if $name.is_empty() {
+            use log::error;
+            use xladd::XLAddError;
             error!("{} At least 1 value reqd", stringify!($arg));
-            return Err(format!("{} At least 1 value reqd", stringify!($arg)).into());
+            return Err(XLAddError::invalid_data(&format!(
+                "{} At least 1 value reqd",
+                stringify!($arg)
+            ))
+            .into());
         }
     };
 }
@@ -1064,7 +1139,7 @@ macro_rules! check_arr_non_zero_nan {
 macro_rules! check_float {
     ($name:ident $cmp:tt $v:tt $(,$rname:ident $rcmp:tt $rv:tt)*) => {
         if !($name $cmp $v) {
-            error!(
+            log::error!(
                 "{} Floating point value must be {} {}",
                 stringify!($name),
                 stringify!($cmp),
@@ -1081,7 +1156,46 @@ macro_rules! check_float {
         }
         $(
             if !($rname $rcmp $rv) {
-                error!(
+                log::error!(
+                    "{} Floating point value must be {} {}",
+                    stringify!($rname),
+                    stringify!($rcmp),
+                    stringify!($rv)
+                );
+                return Err(format!(
+                "{} Floating point value must be {} {}",
+                stringify!($rname),
+                stringify!($rcmp),
+                stringify!($rv)
+                )
+                .into());
+            }
+        )*
+    };
+}
+
+#[macro_export]
+macro_rules! check_int {
+    ($name:ident $cmp:tt $v:tt $(,$rname:ident $rcmp:tt $rv:tt)*) => {
+        if !($name $cmp $v) {
+            log::error!(
+                "{} Floating point value must be {} {}",
+                stringify!($name),
+                stringify!($cmp),
+                stringify!($v)
+            );
+
+            return Err(format!(
+                "{} Floating point value must be {} {}",
+                stringify!($name),
+                stringify!($cmp),
+                stringify!($v)
+            )
+            .into());
+        }
+        $(
+            if !($rname $rcmp $rv) {
+                log::error!(
                     "{} Floating point value must be {} {}",
                     stringify!($rname),
                     stringify!($rcmp),
@@ -1103,15 +1217,28 @@ macro_rules! check_float {
 macro_rules! check_str {
     ($name:ident $(,$rest:ident)*) => {
         if $name.is_empty() {
-            error!("{} At least 1 value reqd",stringify!($name));
+            log::error!("{} At least 1 value reqd",stringify!($name));
             return Err(format!("{} At least 1 value reqd", stringify!($name)).into());
         }
         $(
             if $rest.is_empty() {
-                error!("{} At least 1 value reqd",stringify!($rest));
+                log::error!("{} At least 1 value reqd",stringify!($rest));
                 return Err(format!("{} At least 1 value reqd", stringify!($rest)).into());
             }
         )*
+    }
+}
+
+#[macro_export]
+macro_rules! check_alts {
+    ($name:ident, $rest:expr) => {
+        if $name.is_empty() {
+            log::error!("{} At least 1 value reqd", stringify!($name));
+            return Err(format!("{} At least 1 value reqd", stringify!($name)).into());
+        }
+        if $rest.iter().find(|&v| v == &"$name").is_some() {
+            return Err(format!("One of {:?} reqd", $rest).into());
+        }
     };
 }
 

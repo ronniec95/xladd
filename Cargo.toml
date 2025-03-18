@@ -1,7 +1,7 @@
 [package]
 authors = ["Ronnie Chowdhury"]
 description = "An interface to the Excelv12 api to help write UDF."
-edition = "2018"
+edition = "2021"
 keywords = ["excel", "userdefined", "udf"]
 license = "MIT"
 name = "xladd"
@@ -17,8 +17,9 @@ use_ndarray = ["ndarray"]
 bincode = "^1"
 lazy_static = "1.4.0"
 log = "0.4.8"
-ndarray = {version = "^0.14", optional = true}
+ndarray = { version = "^0.16.1", optional = true }
+thiserror = "1.0"
 serde = "^1"
 serde_derive = "^1"
 widestring = "*"
-winapi = {version = "*", features = ["winuser", "libloaderapi", "debugapi"]}
+winapi = { version = "*", features = ["winuser", "libloaderapi", "debugapi"] }
